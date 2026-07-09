@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+output/
+results*.json
+gemma3-270m/
+logo-detailed-prompt/
+*.log
