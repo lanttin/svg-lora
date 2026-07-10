@@ -128,7 +128,7 @@ python student_kit/eval_self.py \
   --valid logo-detailed-prompt/valid.jsonl \
   --output results_smoke.json \
   --limit 3 \
-  --max-new-tokens 800 \
+  --max-new-tokens 1600 \
   --temperature 0
 ```
 

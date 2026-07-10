@@ -54,18 +54,22 @@ def collect_lengths(tokenizer, rows: list[dict[str, Any]], *, use_chat_template:
             raise ValueError(f"line {row.get('_line_no', idx + 1)} does not contain a messages list")
 
         if use_chat_template and getattr(tokenizer, "chat_template", None):
-            token_ids = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False)
+            total_token_ids = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False)
         else:
             text = "\n".join(f"{m.get('role', '')}: {m.get('content', '')}" for m in messages)
-            token_ids = tokenizer(text, add_special_tokens=True)["input_ids"]
+            total_token_ids = tokenizer(text, add_special_tokens=True)["input_ids"]
 
         prompt = next((m.get("content", "") for m in messages if m.get("role") == "user"), "")
         answer = next((m.get("content", "") for m in messages if m.get("role") == "assistant"), "")
+        prompt_token_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        answer_token_ids = tokenizer(answer, add_special_tokens=False)["input_ids"]
         stats.append(
             {
                 "index": idx,
                 "line_no": row.get("_line_no", idx + 1),
-                "tokens": len(token_ids),
+                "total_tokens": len(total_token_ids),
+                "prompt_tokens": len(prompt_token_ids),
+                "answer_tokens": len(answer_token_ids),
                 "prompt_chars": len(prompt),
                 "answer_chars": len(answer),
             }
@@ -87,35 +91,45 @@ def percentile(values: list[int], pct: float) -> float:
 
 
 def print_report(path: Path, stats: list[dict[str, Any]], top_k: int) -> None:
-    lengths = [item["tokens"] for item in stats]
+    lengths = [item["total_tokens"] for item in stats]
     if not lengths:
         print(f"{path}: no samples")
         return
 
     print(f"file: {path}")
     print(f"count: {len(lengths)}")
-    print(f"min_tokens: {min(lengths)}")
-    print(f"max_tokens: {max(lengths)}")
-    print(f"avg_tokens: {statistics.fmean(lengths):.2f}")
-    print(f"median_tokens: {statistics.median(lengths):.2f}")
-    print(f"p95_tokens: {percentile(lengths, 0.95):.2f}")
+    print_token_summary("total_tokens", [item["total_tokens"] for item in stats])
+    print_token_summary("prompt_tokens", [item["prompt_tokens"] for item in stats])
+    print_token_summary("answer_tokens", [item["answer_tokens"] for item in stats])
 
     top_k = max(0, top_k)
     if top_k:
         print()
-        print(f"shortest {top_k}:")
-        for item in sorted(stats, key=lambda x: x["tokens"])[:top_k]:
+        print(f"shortest answer {top_k}:")
+        for item in sorted(stats, key=lambda x: x["answer_tokens"])[:top_k]:
             print(format_item(item))
 
         print()
-        print(f"longest {top_k}:")
-        for item in sorted(stats, key=lambda x: x["tokens"], reverse=True)[:top_k]:
+        print(f"longest answer {top_k}:")
+        for item in sorted(stats, key=lambda x: x["answer_tokens"], reverse=True)[:top_k]:
             print(format_item(item))
+
+
+def print_token_summary(name: str, lengths: list[int]) -> None:
+    print(f"{name}:")
+    print(f"  min: {min(lengths)}")
+    print(f"  max: {max(lengths)}")
+    print(f"  avg: {statistics.fmean(lengths):.2f}")
+    print(f"  median: {statistics.median(lengths):.2f}")
+    print(f"  p90: {percentile(lengths, 0.90):.2f}")
+    print(f"  p95: {percentile(lengths, 0.95):.2f}")
 
 
 def format_item(item: dict[str, Any]) -> str:
     return (
-        f"index={item['index']} line={item['line_no']} tokens={item['tokens']} "
+        f"index={item['index']} line={item['line_no']} "
+        f"total_tokens={item['total_tokens']} prompt_tokens={item['prompt_tokens']} "
+        f"answer_tokens={item['answer_tokens']} "
         f"prompt_chars={item['prompt_chars']} answer_chars={item['answer_chars']}"
     )
 
