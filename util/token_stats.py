@@ -13,7 +13,7 @@ from transformers import AutoTokenizer
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data", default="logo-detailed-prompt/train.jsonl", help="JSONL dataset path.")
+    parser.add_argument("--data", default="logo-detailed-prompt-cleaned/train.jsonl", help="JSONL dataset path.")
     parser.add_argument("--model", default="./gemma3-270m", help="Tokenizer model id or local path.")
     parser.add_argument(
         "--top-k",

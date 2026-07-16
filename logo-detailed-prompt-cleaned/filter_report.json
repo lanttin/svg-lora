@@ -1,0 +1,104 @@
+{
+  "source_dir": "logo-detailed-prompt",
+  "output_dir": "logo-detailed-prompt-cleaned",
+  "model": "./gemma3-270m",
+  "max_train_tokens": 2048,
+  "train": {
+    "input_path": "logo-detailed-prompt/train.jsonl",
+    "output_path": "logo-detailed-prompt-cleaned/train.jsonl",
+    "input_count": 219,
+    "kept_count": 201,
+    "removed_count": 18,
+    "kept_total_tokens": {
+      "count": 201,
+      "min": 423,
+      "max": 1990,
+      "avg": 1210.4626865671642,
+      "median": 1186
+    },
+    "removed_total_tokens": {
+      "count": 18,
+      "min": 2079,
+      "max": 3532,
+      "avg": 2601.0,
+      "median": 2363.0
+    },
+    "removed": [
+      {
+        "line_no": 12,
+        "total_tokens": 2295
+      },
+      {
+        "line_no": 18,
+        "total_tokens": 2276
+      },
+      {
+        "line_no": 41,
+        "total_tokens": 2139
+      },
+      {
+        "line_no": 42,
+        "total_tokens": 2783
+      },
+      {
+        "line_no": 48,
+        "total_tokens": 2079
+      },
+      {
+        "line_no": 49,
+        "total_tokens": 2666
+      },
+      {
+        "line_no": 56,
+        "total_tokens": 2268
+      },
+      {
+        "line_no": 59,
+        "total_tokens": 3532
+      },
+      {
+        "line_no": 81,
+        "total_tokens": 2369
+      },
+      {
+        "line_no": 86,
+        "total_tokens": 2315
+      },
+      {
+        "line_no": 100,
+        "total_tokens": 3404
+      },
+      {
+        "line_no": 109,
+        "total_tokens": 2357
+      },
+      {
+        "line_no": 118,
+        "total_tokens": 3127
+      },
+      {
+        "line_no": 130,
+        "total_tokens": 2937
+      },
+      {
+        "line_no": 131,
+        "total_tokens": 2801
+      },
+      {
+        "line_no": 147,
+        "total_tokens": 2115
+      },
+      {
+        "line_no": 157,
+        "total_tokens": 3274
+      },
+      {
+        "line_no": 201,
+        "total_tokens": 2081
+      }
+    ]
+  },
+  "valid": {
+    "policy": "copied unchanged"
+  }
+}

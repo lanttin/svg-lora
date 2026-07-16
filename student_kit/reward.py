@@ -132,8 +132,12 @@ def _score(raw_svg: str, prompt: str) -> RewardResult:
     svg = _extract_svg(raw_svg)
     components: dict[str, float] = {}
 
+    components["task_intent"] = _score_task_intent(raw_svg, notes)
     components["format"] = _score_format(raw_svg, svg, notes)
-    if components["format"] <= 0.2:
+    # Merely mentioning an SVG snippet (for example while echoing the system
+    # prompt) is not an attempt to perform the task.  Do not parse an embedded
+    # ``<svg ...>...</svg>`` unless the response itself starts with <svg.
+    if components["task_intent"] == 0.0:
         return _finalize(components, notes)
 
     try:
@@ -158,23 +162,25 @@ def _score(raw_svg: str, prompt: str) -> RewardResult:
 
 def _finalize(components: dict[str, float], notes: list[str]) -> RewardResult:
     weights = {
-        "format": 0.10,
+        "task_intent": 0.15,
+        "format": 0.08,
         "parse": 0.14,
-        "svg_contract": 0.12,
-        "safety": 0.12,
-        "structure": 0.14,
-        "geometry": 0.13,
-        "palette": 0.10,
-        "prompt_alignment": 0.10,
-        "anti_degenerate": 0.05,
+        "svg_contract": 0.10,
+        "safety": 0.10,
+        "structure": 0.12,
+        "geometry": 0.11,
+        "palette": 0.08,
+        "prompt_alignment": 0.09,
+        "anti_degenerate": 0.03,
     }
-    total = 0.0
-    used = 0.0
-    for name, value in components.items():
-        weight = weights.get(name, 0.0)
-        total += weight * _clamp01(value)
-        used += weight
-    score = total / used if used else 0.0
+    # Missing components are failures, not reasons to renormalize the score.
+    # This keeps malformed/non-SVG output below valid SVG output and prevents
+    # early returns from receiving an artificially inflated reward.
+    total = sum(
+        weight * _clamp01(components.get(name, 0.0))
+        for name, weight in weights.items()
+    )
+    score = total
     return RewardResult(score=_clamp01(score), components=components, notes=notes)
 
 
@@ -186,20 +192,35 @@ def _extract_svg(text: str) -> str:
     return match.group(0).strip() if match else text
 
 
+def _score_task_intent(raw: str, notes: list[str]) -> float:
+    """Reward actually starting the requested artifact, not mentioning it."""
+
+    stripped = raw.strip()
+    if re.match(r"<svg\b", stripped, flags=re.IGNORECASE):
+        return 1.0
+    if re.search(r"<svg\b", stripped, flags=re.IGNORECASE):
+        notes.append("svg_not_at_response_start")
+    else:
+        notes.append("no_svg_attempt")
+    return 0.0
+
+
 def _score_format(raw: str, svg: str, notes: list[str]) -> float:
     score = 0.0
     stripped = raw.strip()
-    if svg.lower().startswith("<svg"):
-        score += 0.35
+    starts_with_svg = bool(re.match(r"<svg\b", stripped, flags=re.IGNORECASE))
+    ends_with_svg = stripped.lower().endswith("</svg>")
+    if starts_with_svg:
+        score += 0.40
     else:
         notes.append("missing_opening_svg")
-    if svg.lower().endswith("</svg>"):
-        score += 0.35
+    if ends_with_svg:
+        score += 0.30
     else:
         notes.append("missing_closing_svg")
-    if stripped == svg:
+    if starts_with_svg and ends_with_svg and stripped == svg:
         score += 0.20
-    else:
+    elif stripped != svg:
         notes.append("extra_text_outside_svg")
     if "```" not in raw:
         score += 0.10

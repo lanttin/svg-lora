@@ -33,7 +33,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Base model id or local path.")
     parser.add_argument("--adapter", default=None, help="LoRA adapter path. If omitted, only base is evaluated.")
-    parser.add_argument("--valid", default="logo-detailed-prompt/valid.jsonl")
+    parser.add_argument("--valid", default="logo-detailed-prompt-cleaned/valid.jsonl")
     parser.add_argument("--output", default="results.json")
     parser.add_argument("--max-new-tokens", type=int, default=1400)
     parser.add_argument("--temperature", type=float, default=0.0)

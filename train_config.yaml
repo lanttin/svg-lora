@@ -2,8 +2,8 @@
 
 model: ./gemma3-270m
 tuner_type: lora
-dataset: logo-detailed-prompt/train.jsonl
-val_dataset: logo-detailed-prompt/valid.jsonl
+dataset: logo-detailed-prompt-cleaned/train.jsonl
+val_dataset: logo-detailed-prompt-cleaned/valid.jsonl
 torch_dtype: bfloat16
 num_train_epochs: 8
 per_device_train_batch_size: 1

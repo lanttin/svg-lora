@@ -21,8 +21,8 @@ Components:
 - Base model: `./gemma3-270m`
 - Framework: ms-swift
 - Method: LoRA SFT
-- Train data: `logo-detailed-prompt/train.jsonl`
-- Validation data: `logo-detailed-prompt/valid.jsonl`
+- Train data: `logo-detailed-prompt-cleaned/train.jsonl`
+- Validation data: `logo-detailed-prompt-cleaned/valid.jsonl`
 - Epochs: 8
 - Learning rate: 1e-4
 - LoRA rank: 8
