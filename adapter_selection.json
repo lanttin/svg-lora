@@ -1,0 +1,68 @@
+{
+  "created_at": "2026-07-17 22:10:26",
+  "run_dir": "output/swift-svg-lora/v3-20260717-220123",
+  "selection_rule": "minimum eval_loss among existing checkpoints in the latest run",
+  "evaluations": [
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-25",
+      "step": 25,
+      "eval_loss": 0.95308518409729,
+      "eligible": true
+    },
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-50",
+      "step": 50,
+      "eval_loss": 0.8498199582099915,
+      "eligible": true
+    },
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-75",
+      "step": 75,
+      "eval_loss": 0.7991368174552917,
+      "eligible": true
+    },
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-100",
+      "step": 100,
+      "eval_loss": 0.7773677110671997,
+      "eligible": true
+    },
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-125",
+      "step": 125,
+      "eval_loss": 0.761040985584259,
+      "eligible": true
+    },
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-150",
+      "step": 150,
+      "eval_loss": 0.7564456462860107,
+      "eligible": true
+    },
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-175",
+      "step": 175,
+      "eval_loss": 0.7531523108482361,
+      "eligible": true
+    },
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-200",
+      "step": 200,
+      "eval_loss": 0.7519446015357971,
+      "eligible": true
+    },
+    {
+      "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-208",
+      "step": 208,
+      "eval_loss": 0.7524240016937256,
+      "eligible": true
+    }
+  ],
+  "selected": {
+    "checkpoint": "output/swift-svg-lora/v3-20260717-220123/checkpoint-200",
+    "step": 200,
+    "eval_loss": 0.7519446015357971,
+    "eligible": true
+  },
+  "adapter_output": "adapter"
+}
