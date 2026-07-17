@@ -23,19 +23,20 @@ from student_kit.reward import score_svg
 SYSTEM_PROMPT = """You are an expert logo designer working in clean, scalable vector graphics. Given a description of a logo's visual elements, output ONE complete SVG document for the logo.
 
 Rules:
-- Output ONLY the SVG: a single <svg ...>...</svg> element with an xmlns and viewBox="0 0 256 256". No prose, no markdown, no code fences.
-- Compose centered, content roughly within 16..240. Use a small cohesive palette.
-- Put gradients/filters in <defs>; use vector primitives only (<path>, <circle>, <ellipse>, <rect>, <polygon>, <line>, <g>). No <image>, external refs, or scripts.
-- Draw exactly what the description specifies."""
+- Output ONLY one <svg>...</svg> element with xmlns="http://www.w3.org/2000/svg" and viewBox="0 0 256 256". No prose, markdown, or code fences.
+- Use only <g>, <path>, <circle>, <ellipse>, <rect>, <polygon>, and <line> inside the SVG.
+- Use solid fill and stroke colors only. Do not use <defs>, gradients, filters, masks, clip paths, <use>, external references, scripts, animation, text, or images.
+- Keep the structure shallow, use at most 40 graphic elements, and finish with </svg>.
+- Compose the requested logo centered within the 256 by 256 canvas using a small cohesive palette."""
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Base model id or local path.")
     parser.add_argument("--adapter", default=None, help="LoRA adapter path. If omitted, only base is evaluated.")
-    parser.add_argument("--valid", default="logo-detailed-prompt-cleaned/valid.jsonl")
+    parser.add_argument("--valid", default="logo-detailed-prompt-simple/valid.jsonl")
     parser.add_argument("--output", default="results.json")
-    parser.add_argument("--max-new-tokens", type=int, default=1400)
+    parser.add_argument("--max-new-tokens", type=int, default=1600)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
     parser.add_argument("--limit", type=int, default=None)

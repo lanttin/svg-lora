@@ -50,25 +50,26 @@ python -c "from modelscope import snapshot_download; snapshot_download('<gemma-3
 如果需要重新生成清洗后的数据目录，运行：
 
 ```bash
-python util/prepare_clean_data.py
+python util/simplify_svg_data.py
 ```
 
 这会创建或刷新：
 
 ```text
-logo-detailed-prompt-cleaned/
+logo-detailed-prompt-simple/
   train.jsonl
   valid.jsonl
-  filter_report.json
+  simplify_report.json
 ```
 
-当前规则是：训练集中总长度超过 2048 tokens 的样本会被删除，验证集原样复制。
+当前规则是：渐变转纯色、展开 `<use>`、移除复杂效果、规范化背景矩形，
+并真实渲染检查全部结果；训练集中超过 3200 字符或 40 个图形元素的复杂样本会被删除。
 
 ```bash
 python - <<'PY'
 import json
 from student_kit.reward import score_svg
-row = json.loads(open("logo-detailed-prompt-cleaned/train.jsonl", encoding="utf-8").readline())
+row = json.loads(open("logo-detailed-prompt-simple/train.jsonl", encoding="utf-8").readline())
 prompt = next(m["content"] for m in row["messages"] if m["role"] == "user")
 svg = next(m["content"] for m in row["messages"] if m["role"] == "assistant")
 print(json.dumps(score_svg(svg, prompt), ensure_ascii=False, indent=2))
@@ -81,8 +82,8 @@ PY
 CUDA_VISIBLE_DEVICES=0 swift sft \
   --model ./gemma3-270m \
   --tuner_type lora \
-  --dataset logo-detailed-prompt-cleaned/train.jsonl \
-  --val_dataset logo-detailed-prompt-cleaned/valid.jsonl \
+  --dataset logo-detailed-prompt-simple/train.jsonl \
+  --val_dataset logo-detailed-prompt-simple/valid.jsonl \
   --torch_dtype bfloat16 \
   --num_train_epochs 8 \
   --per_device_train_batch_size 1 \
@@ -94,7 +95,7 @@ CUDA_VISIBLE_DEVICES=0 swift sft \
   --gradient_accumulation_steps 8 \
   --eval_steps 25 \
   --save_steps 25 \
-  --save_total_limit 3 \
+  --save_total_limit 20 \
   --logging_steps 5 \
   --max_length 2048 \
   --output_dir output/swift-svg-lora \
@@ -107,13 +108,11 @@ CUDA_VISIBLE_DEVICES=0 swift sft \
 bash train_swift.sh
 ```
 
-训练完成后，找到 `output/swift-svg-lora/` 下最新的 checkpoint。提交时复制或重命名为：
+训练完成后，从最新训练目录的现存 checkpoint 中选择 `eval_loss` 最低的权重，
+并复制到 `adapter/`：
 
 ```bash
-mkdir -p adapter
-LATEST_CKPT=$(find output/swift-svg-lora -type d -name 'checkpoint-*' | sort -V | tail -n 1)
-cp "$LATEST_CKPT/adapter_config.json" adapter/
-cp "$LATEST_CKPT/adapter_model.safetensors" adapter/
+bash select_best_adapter.sh
 ```
 
 ## 5. 自评：基座 vs 微调
@@ -122,9 +121,9 @@ cp "$LATEST_CKPT/adapter_model.safetensors" adapter/
 python student_kit/eval_self.py \
   --model ./gemma3-270m \
   --adapter adapter \
-  --valid logo-detailed-prompt-cleaned/valid.jsonl \
+  --valid logo-detailed-prompt-simple/valid.jsonl \
   --output results.json \
-  --max-new-tokens 1900 \
+  --max-new-tokens 1600 \
   --temperature 0
 ```
 
@@ -142,7 +141,7 @@ python student_kit/make_gallery.py --results results.json --output gallery.html
 python student_kit/eval_self.py \
   --model ./gemma3-270m \
   --adapter adapter \
-  --valid logo-detailed-prompt-cleaned/valid.jsonl \
+  --valid logo-detailed-prompt-simple/valid.jsonl \
   --output results_smoke.json \
   --limit 3 \
   --max-new-tokens 1600 \

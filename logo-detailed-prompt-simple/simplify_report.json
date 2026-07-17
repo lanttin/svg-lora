@@ -1,0 +1,284 @@
+{
+  "policy": {
+    "gradient": "replace paint-server fill/stroke with first stop color",
+    "use": "expand local shape/group references",
+    "unsupported": "remove defs, filters, clipping, masks, animation, text, and style elements",
+    "background": "normalize oversized full-canvas rectangles to 0 0 256 256",
+    "coordinates": "round decimal attributes to two places"
+  },
+  "renderer": "/usr/bin/convert",
+  "train": {
+    "source": "logo-detailed-prompt/train.jsonl",
+    "destination": "logo-detailed-prompt-simple/train.jsonl",
+    "source_count": 219,
+    "count": 205,
+    "filtered_count": 14,
+    "filtered": [
+      {
+        "line": 10,
+        "answer_chars": 2256,
+        "graphics": 47,
+        "reasons": [
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 12,
+        "answer_chars": 3499,
+        "graphics": 49,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 18,
+        "answer_chars": 6154,
+        "graphics": 71,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 42,
+        "answer_chars": 3197,
+        "graphics": 42,
+        "reasons": [
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 49,
+        "answer_chars": 3601,
+        "graphics": 49,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 56,
+        "answer_chars": 3398,
+        "graphics": 48,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 59,
+        "answer_chars": 4314,
+        "graphics": 48,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 81,
+        "answer_chars": 3252,
+        "graphics": 40,
+        "reasons": [
+          "answer_chars>3200"
+        ]
+      },
+      {
+        "line": 100,
+        "answer_chars": 4547,
+        "graphics": 69,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 118,
+        "answer_chars": 4316,
+        "graphics": 70,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 130,
+        "answer_chars": 4229,
+        "graphics": 63,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 131,
+        "answer_chars": 4680,
+        "graphics": 75,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 157,
+        "answer_chars": 4294,
+        "graphics": 54,
+        "reasons": [
+          "answer_chars>3200",
+          "graphics>40"
+        ]
+      },
+      {
+        "line": 199,
+        "answer_chars": 3029,
+        "graphics": 58,
+        "reasons": [
+          "graphics>40"
+        ]
+      }
+    ],
+    "answer_chars_before": {
+      "count": 219,
+      "min": 419,
+      "median": 1585,
+      "mean": 1764.38,
+      "p90": 2895.4,
+      "p95": 3596.1,
+      "max": 5348
+    },
+    "answer_chars_after_all": {
+      "count": 219,
+      "min": 323,
+      "median": 1311,
+      "mean": 1504.04,
+      "p90": 2442.8,
+      "p95": 3202.5,
+      "max": 6154
+    },
+    "graphics_after_all": {
+      "count": 219,
+      "min": 3,
+      "median": 14,
+      "mean": 18.47,
+      "p90": 33.2,
+      "p95": 47.1,
+      "max": 75
+    },
+    "answer_chars_final": {
+      "count": 205,
+      "min": 323,
+      "median": 1255,
+      "mean": 1339.6,
+      "p90": 2146.4,
+      "p95": 2398.2,
+      "max": 3040
+    },
+    "graphics_final": {
+      "count": 205,
+      "min": 3,
+      "median": 14,
+      "mean": 15.91,
+      "p90": 30.0,
+      "p95": 33.0,
+      "max": 40
+    },
+    "operations": {
+      "gradients_replaced": 318,
+      "uses_expanded": 112,
+      "normalized_backgrounds": 107
+    },
+    "removed_tags": {
+      "defs": 201,
+      "linearGradient": 193,
+      "stop": 731,
+      "radialGradient": 125,
+      "clipPath": 23,
+      "filter": 11,
+      "feTurbulence": 3,
+      "feDisplacementMap": 2,
+      "feGaussianBlur": 6,
+      "style": 3,
+      "feColorMatrix": 1,
+      "feMerge": 4,
+      "feMergeNode": 8,
+      "mask": 1,
+      "feDropShadow": 2,
+      "polyline": 1,
+      "animate": 2
+    },
+    "xml_valid": 219,
+    "render_checked": 219,
+    "render_failures": []
+  },
+  "valid": {
+    "source": "logo-detailed-prompt/valid.jsonl",
+    "destination": "logo-detailed-prompt-simple/valid.jsonl",
+    "source_count": 17,
+    "count": 17,
+    "filtered_count": 0,
+    "filtered": [],
+    "answer_chars_before": {
+      "count": 17,
+      "min": 934,
+      "median": 1596,
+      "mean": 1804.88,
+      "p90": 2584.4,
+      "p95": 2829.2,
+      "max": 3758
+    },
+    "answer_chars_after_all": {
+      "count": 17,
+      "min": 770,
+      "median": 1286,
+      "mean": 1518.47,
+      "p90": 2224.8,
+      "p95": 2445.2,
+      "max": 3274
+    },
+    "graphics_after_all": {
+      "count": 17,
+      "min": 8,
+      "median": 15,
+      "mean": 16.76,
+      "p90": 25.8,
+      "p95": 29.6,
+      "max": 40
+    },
+    "answer_chars_final": {
+      "count": 17,
+      "min": 770,
+      "median": 1286,
+      "mean": 1518.47,
+      "p90": 2224.8,
+      "p95": 2445.2,
+      "max": 3274
+    },
+    "graphics_final": {
+      "count": 17,
+      "min": 8,
+      "median": 15,
+      "mean": 16.76,
+      "p90": 25.8,
+      "p95": 29.6,
+      "max": 40
+    },
+    "operations": {
+      "gradients_replaced": 22,
+      "uses_expanded": 0,
+      "normalized_backgrounds": 7
+    },
+    "removed_tags": {
+      "defs": 16,
+      "linearGradient": 13,
+      "stop": 51,
+      "clipPath": 3,
+      "radialGradient": 9,
+      "filter": 1,
+      "feGaussianBlur": 1
+    },
+    "xml_valid": 17,
+    "render_checked": 17,
+    "render_failures": []
+  },
+  "all_rendered": true
+}
