@@ -2,259 +2,214 @@
 
 ## 1. 摘要
 
-本项目使用 LoRA 对 Gemma 3 270M 进行监督微调，使模型根据详细英文描述生成单个、完整且安全的 SVG 徽标。针对 270M 小模型容易复述提示词、输出不闭合以及陷入重复的问题，我首先把原始 SVG 数据转换为更浅、更短的纯图元表示，并设计了一个由格式、XML 有效性、安全性、结构、几何、配色、提示词对齐和抗退化等部分组成的可解释 reward。
+本项目使用 LoRA 对 Gemma 3 270M 进行监督微调，使模型根据详细英文描述生成单个 256×256 SVG 徽标。针对小模型生成长 SVG 时容易出现标签不闭合、属性错误和重复退化的问题，训练数据被转换为结构更浅、长度更短的纯图元形式，并使用一个覆盖任务意图、格式、XML、SVG 合约、安全性、结构、几何、配色、提示词对齐和抗退化的程序化 reward 进行自评。
 
-在 17 条验证样本、贪心解码的最终自评中，基座模型的平均 reward 为 **0.0080**，LoRA 模型为 **0.2336**，绝对提升 **+0.2256**。LoRA 将“回答直接以 `<svg>` 开始”的比例从 **0/17 提升到 17/17**，说明模型确实学会了任务格式；但只有 **1/17** 的回答能作为完整 XML 解析，且 **16/17** 达到 1600 token 上限。因而本实验的真实结论不是“已经会画高质量徽标”，而是“已从完全偏离任务提升到稳定尝试 SVG，但仍严重受重复生成和闭合失败限制”。
+训练使用 205 条简化训练样本，训练期验证与 checkpoint 选择使用 17 条简化验证样本。最终推理自评单独使用原始数据集的 17 条验证样本，采样设置为 `temperature=1.0`、`top_p=1.0`、`seed=42`，最大生成长度为 1600 token。
 
-## 2. 任务与仓库结构
+最终结果中，基座模型平均 reward 为 **0.0030**，LoRA 为 **0.4588**。LoRA 的 17 条回答全部直接以 `<svg>` 开始，其中 8 条能通过严格 XML 解析，16 条能在画廊中由浏览器解析并展示。严格 XML 与浏览器展示率的差异说明浏览器能够容忍部分标记错误，但这种容错不代表输出是可移植、可编辑的合法 SVG，因此 reward 仍以严格 XML 为质量门控。
 
-任务目标是比较同一个 Gemma 3 270M 基座在微调前后的相对变化，主要提交物如下：
+完整逐样本结果见 [results.json](results.json)，可视化结果见 [SVG 对比画廊](gallery.html)。
 
-- `adapter/`：step 200 的 LoRA 权重与配置；
-- `student_kit/reward.py` 与根目录 `reward.py`：reward 实现及提交入口；
-- `train_config.yaml`：最终训练超参数；
-- `results.json`：固定设置下的逐样本基座/LoRA 自评结果；
-- `report.md`：实验报告。
+## 2. 任务与提交内容
 
+任务目标是让 Gemma 3 270M 根据自然语言描述直接输出一个 SVG 徽标，并比较基座模型与 LoRA 模型的生成表现。主要文件如下：
 
-## 3. 数据预处理
+- `adapter/`：选定 checkpoint 导出的 LoRA 权重与配置；
+- `train_config.yaml`：ms-swift SFT 训练配置；
+- `student_kit/reward.py`：reward 实现；
+- `student_kit/eval_self.py`：推理与自评脚本；
+- `results.json`：基座与 LoRA 的完整原始输出和逐项分数；
+- `gallery.html`：Target、Base、Adapter 的并排展示；
+- `adapter_selection.json`：checkpoint 选择依据。
 
-### 3.1 为什么需要简化
+## 3. 数据设计
 
-原始数据包含渐变、滤镜、裁剪、mask、`<use>`、动画和很大的背景矩形。它们对人工 SVG 很有用，却增加了小模型要学习的 XML 层级、引用关系和序列长度。早期方案只按总 token 数过滤原始数据（219 条中保留 201 条），仍没有消除这些结构性难点。最终方案改为“先语义尽量保留地简化，再按复杂度过滤”。
+### 3.1 简化训练数据
 
-### 3.2 最终处理流程
+原始 SVG 包含渐变、滤镜、裁剪、mask、`<use>`、动画、文本和较深的 XML 嵌套。它们增加了序列长度、引用关系和语法状态，对 270M 参数模型并不友好。`util/simplify_svg_data.py` 对 assistant SVG 执行确定性简化：
 
-`util/simplify_svg_data.py` 对每个 assistant SVG 执行以下确定性处理：
-
-1. 用渐变的第一个 stop color 替换 `url(#...)` paint server；
+1. 使用渐变的第一个 stop color 替换 `url(#...)` paint server；
 2. 展开可解析的本地 `<use>` 引用；
 3. 仅保留 `svg/g/path/circle/ellipse/rect/polygon/line`；
-4. 删除 defs、filter、clipPath、mask、动画、text、事件属性和外部引用；
-5. 将异常大的全画布背景矩形归一化到 `0 0 256 256`；
-6. 小数属性保留两位，并统一 `viewBox="0 0 256 256"`；
-7. 重新做 XML 解析，并通过 ImageMagick 实际渲染检查；
-8. 训练集中剔除 SVG 超过 3200 字符或图形元素超过 40 个的样本。
+4. 移除 defs、filter、clipPath、mask、动画、text、事件属性和外部引用；
+5. 将异常大的背景矩形归一化为 `0 0 256 256`；
+6. 将小数属性保留两位，并统一 `viewBox="0 0 256 256"`；
+7. 重新执行 XML 解析和 ImageMagick 渲染检查；
+8. 从训练集中剔除 SVG 超过 3200 字符或图形元素超过 40 个的样本。
 
-同时，system prompt 被统一成与最终生成约束一致的版本：只输出一个 SVG、只用允许的纯色图元、最多 40 个图形元素，并必须闭合。
+简化后的 system prompt 与目标结构保持一致：只输出一个 SVG，只使用允许的纯色图元，结构保持浅层，图形元素不超过 40 个，并以 `</svg>` 结束。
 
-### 3.3 处理统计
+### 3.2 数据统计
 
 | 划分 | 原始条数 | 最终条数 | 过滤条数 | 最终 SVG 平均字符数 | 图元中位数 / 最大值 | 渲染失败 |
 |---|---:|---:|---:|---:|---:|---:|
 | Train | 219 | 205 | 14 | 1339.60 | 14 / 40 | 0 |
 | Valid | 17 | 17 | 0 | 1518.47 | 15 / 40 | 0 |
 
-训练集累计替换 318 个渐变、展开 112 个 `<use>`，并归一化 107 个背景；验证集替换 22 个渐变并归一化 7 个背景。所有 236 个转换后的 SVG 均通过 XML 与渲染检查。完整统计见 `logo-detailed-prompt-simple/simplify_report.json`。
+训练集共替换 318 个渐变、展开 112 个 `<use>`，并归一化 107 个背景；简化验证集替换 22 个渐变并归一化 7 个背景。转换后的 236 个 SVG 均通过 XML 和渲染检查。完整统计位于 `logo-detailed-prompt-simple/simplify_report.json`。
 
-这一处理降低了目标序列的结构熵，但有明确代价：渐变被压成单色、裁剪和滤镜被移除，视觉细节会损失；过滤长样本也让训练分布更偏向简单徽标。这是为了优先让 270M 模型学会“完整输出”所做的工程取舍。
+简化降低了训练目标的结构熵和长程语法负担，代价是渐变、滤镜和部分视觉细节损失。对于本任务，优先目标是让小模型输出完整、可解析且不退化的 SVG，因此这一取舍是合理的。
+
+### 3.3 训练验证与最终自评的区别
+
+本实验有两个用途不同的验证环节：
+
+| 环节 | 数据文件 | 用途 |
+|---|---|---|
+| 训练期验证 | `logo-detailed-prompt-simple/valid.jsonl` | 计算 eval loss，选择与简化训练目标一致的 checkpoint |
+| 最终推理自评 | `logo-detailed-prompt/valid.jsonl` | 使用原始任务指令和原始 Target 评估实际生成效果 |
+
+最终自评会读取原始验证集每条记录中的 system、user 和 assistant 消息。system 与 user 被送入模型；assistant SVG 不参与生成，只作为 `target` 保存到结果并显示在画廊中。因此，最终自评既更换了参考 Target，也实际使用了原始版本的 system prompt。两个版本的 system prompt 核心任务相同，但原始版本允许在 `<defs>` 中使用渐变或滤镜，也没有简化版本的 40 图元硬约束。结果表明 LoRA 在这一指令变化下仍保持了稳定的 SVG 起始行为。
 
 ## 4. Reward 设计
 
-### 4.1 设计原则
+### 4.1 权重与门控
 
-reward 是训练代理指标，不是真实视觉评价。对极小模型而言，首先应奖励“确实开始完成 SVG 任务、语法有效、安全、边界合理”，再给予较轻的语义分。若过早把复杂视觉语义置于最高权重，分数会被不可可靠测量的部分主导。
+Reward 范围为 `[0,1]`，缺失组件按 0 分计算，不对已计算组件重新归一化。当前代码中的权重为：
 
-总分范围为 `[0,1]`，缺失的组件按 0 分处理而不重新归一化：
-
-| 组件 | 权重 | 检查内容与理由 |
+| 组件 | 权重 | 检查内容 |
 |---|---:|---|
-| task_intent | 0.15 | 回答必须直接以 `<svg>` 开始，防止模型复述 system/user prompt 后仅提及 SVG |
-| format | 0.08 | 开头、结尾、单一文档、无 Markdown fence，保证可直接使用 |
-| parse | 0.14 | `ElementTree` XML 解析成功；这是可用 SVG 的基础 |
-| svg_contract | 0.10 | 根节点、xmlns、256×256 viewBox、无外部引用 |
-| safety | 0.10 | 禁止 script、image、foreignObject、事件属性及不支持标签 |
-| structure | 0.12 | 3–80 个图元、合理文本长度和浅层分组，兼顾非空与不过度复杂 |
-| geometry | 0.11 | 数值有限，多数坐标位于画布附近，无极端值且具有一定分布 |
-| palette | 0.08 | 颜色合法，优先 2–8 色的小而连贯的调色板 |
-| prompt_alignment | 0.09 | 根据提示词中的颜色词、形状词和少量字面 motif 做弱匹配 |
-| anti_degenerate | 0.03 | 检查重复 path/字符与过低标签多样性 |
+| task_intent | 0.05 | 完整回答是否直接以 `<svg>` 开始 |
+| format | 0.03 | SVG 开头、`</svg>` 结尾、单一文档、无 Markdown fence |
+| parse | 0.10 | 第一个闭合 SVG 片段能否被 `ElementTree` 严格解析 |
+| svg_contract | 0.07 | SVG 根节点、标准 xmlns、256×256 viewBox、无外部引用 |
+| safety | 0.08 | 禁止标签、未知标签、事件属性和 href 属性 |
+| structure | 0.15 | 图元数量、SVG 长度和分组复杂度 |
+| geometry | 0.14 | 数值有限、坐标范围和数值分布 |
+| palette | 0.11 | 显式颜色合法性与 2–8 色的紧凑调色板 |
+| prompt_alignment | 0.20 | 提示词中的形状、颜色和少量字面 motif 对齐 |
+| anti_degenerate | 0.07 | 重复 path、字符、相同图元、坐标与标签多样性 |
 
-reward 采用“门控”逻辑：若输出不是从 `<svg>` 开始，立即结束；若 XML 解析失败，也不再计算依赖 DOM 的后续组件。这能避免一段复述文本因为包含 `<svg>...</svg>` 示例而得到高分，也避免解析失败样本凭局部特征获得虚高分。
+基础任务合规五项 `task_intent + format + parse + svg_contract + safety` 共占 0.33，结构、几何、配色、提示词对齐和抗退化共占 0.67。
 
-### 4.2 语义对齐的实现与边界
+Reward 使用两级门控：回答不直接以 `<svg>` 开始时立即停止；通过第一层后，如果严格 XML 解析失败，也立即停止，不计算依赖 DOM 的后续质量项。这避免了复述 system prompt、只包含字面 SVG 示例或严重损坏的输出获得虚高分。
 
-形状对齐将 circle、square、star、leaf 等提示词映射到预期 SVG 标签；颜色对齐既检查颜色名/hex，也允许 RGB 距离在 95 内的近似色；motif 字面命中只占语义子分的 10%。这种设计可解释、无需外部模型，但无法判断某条 `<path>` 是否真的像树叶、手掌或瓶子，也无法衡量构图、遮挡、对称性和审美。
+浏览器对错误 HTML/SVG 有容错能力，但浏览器可解析或可展示不参与 reward。严格 XML 解析保证结果更容易作为独立 `.svg` 文件保存、编辑和跨工具使用；浏览器展示率只作为效果补充指标。
 
+### 4.2 评分与展示对象
 
-## 5. 训练与复现流程
+评测过程中保留模型的完整原始回答，但不同阶段使用的对象不同：
 
-### 5.1 最终配置
+```text
+保存对象：完整原始输出
+基础格式评分：完整原始输出
+XML/质量评分：第一个闭合 SVG 片段
+Gallery 展示：第一个闭合 SVG 片段
+抗退化评分：完整原始输出
+```
+
+具体而言，`prediction` 保存完整原始回答；`task_intent` 和 `format` 检查完整回答；reward 用正则抽取第一个 `<svg ...>...</svg>` 片段并对它执行严格 XML 及后续 DOM 评分；`anti_degenerate` 回到完整回答检查闭合 SVG 后继续重复生成的情况。画廊也从完整 prediction 中抽取第一个闭合 SVG 片段直接嵌入 HTML；若找不到闭合片段，则显示 `No SVG`。画廊的 source 区域显示原始回答的前 4000 个字符。
+
+这种口径保留了模型真实生成行为，同时避免尾随乱码影响第一个完整 SVG 的质量分析；尾随内容仍会被 format 和 anti-degenerate 捕获。
+
+### 4.3 语义项的边界
+
+提示词对齐子分由形状 45%、颜色 45% 和字面 motif 10% 组成。形状词被映射到预期 SVG 标签，颜色允许名称、hex 以及 RGB 距离不超过 95 的近似匹配。该方法可解释且无需外部模型，但不能判断一条 `<path>` 是否真的像树叶、手掌或瓶子，也不能可靠衡量遮挡、对称、构图和审美，因此 reward 必须与画廊联合阅读。
+
+## 5. 训练与 checkpoint 选择
 
 | 项目 | 设置 |
 |---|---|
 | 基座模型 | `./gemma3-270m` |
 | 框架 | ms-swift SFT |
 | 精度 | bfloat16 |
-| 训练 / 验证集 | simple 205 / 17 |
+| 简化训练 / 训练期验证 | 205 / 17 |
 | Epoch | 8 |
 | Batch size / 梯度累积 | 1 / 8（有效 batch 8） |
 | 学习率 / warmup | 1e-4 / 0.05 |
 | LoRA rank / alpha / dropout | 8 / 16 / 0.05 |
-| Target modules | all-linear（导出配置中为 q/k/v/o、gate/up/down projection） |
+| Target modules | all-linear |
 | 最大训练长度 | 2048 |
 | eval/save 间隔 | 25 steps |
 | 随机种子 | 42 |
 
-### 5.2 实验迭代
+训练期 eval loss 从 step 25 的 0.9531 下降至 step 200 的最低值 **0.7519**，step 208 为 0.7524。根据“最新训练目录中现存 checkpoint 的最低 eval loss”规则选择 step 200，并复制到 `adapter/`。选择过程和全部记录见 `adapter_selection.json`。
 
-本项目依次尝试了三类数据方案：原始数据；仅过滤超过 2048 token 的数据；最终的纯图元简化数据。保留的历史结果显示，在“仅长度清洗”的一次评测中，`max_new_tokens=1900` 时基座/LoRA reward 为 **0.008/0.190**，两者 17/17 均触达上限。最终简化数据实验变为 **0.008/0.2336**，说明目标简化带来了一些额外收益，但重复与停止问题仍未解决。由于这些迭代同时改变了数据和生成长度，不能把差值严格解释为单一变量的消融；它们仅作为开发轨迹，最终结论以当前 `results.json` 为准。
+## 6. 最终自评设置
 
-### 5.3 checkpoint 选择
+最终自评配置直接记录在 `results.json`：
 
-验证 loss 从 step 25 的 0.9531 持续下降，在 step 200 达到最低 **0.7519**，step 208 小幅回升到 0.7524。因此按“现存 checkpoint 中 eval_loss 最低”选择 step 200，而不是机械使用最后一步。这一拐点虽很小，但符合早停思路。
+| 项目 | 设置 |
+|---|---|
+| 验证文件 | `logo-detailed-prompt/valid.jsonl`（原始验证集） |
+| 样本数 | 17 |
+| Temperature | 1.0 |
+| Top-p | 1.0 |
+| Seed | 42 |
+| Max new tokens | 1600 |
 
-### 5.4 从头复现
+`temperature=1.0` 表示本次不是贪心解码，而是随机采样。固定 seed 用于提高复现性，并且脚本在评测 Base 和 Adapter 前分别重置相同 seed，使两者从相同采样流开始。随机采样有机会跳出确定性解码中的局部重复模式，但结果仍可能受推理框架、硬件和软件版本影响。
 
-以下过程与 `RUN_COMMANDS.md` 保持一致，所有命令均在仓库根目录执行。
-
-**步骤 1：创建并进入 Python 3.12 环境。**
-
-```bash
-conda create -n svg-lora python=3.12 -y
-conda activate svg-lora
-python -m pip install -U pip
-```
-
-**步骤 2：安装项目依赖。**
-
-```bash
-pip install -r requirements.txt
-```
-
-**步骤 3：确认 PyTorch、CUDA 与 GPU 状态。**
-
-```bash
-python - <<'PY'
-import torch
-print("PyTorch:", torch.__version__)
-print("CUDA available:", torch.cuda.is_available())
-print("CUDA runtime:", torch.version.cuda)
-print("GPU:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "None")
-PY
-```
-
-**步骤 4：从 ModelScope 下载 Gemma 3 270M。** 需要将占位符替换为实际的 ModelScope 模型仓库名，下载后的目录必须是 `./gemma3-270m`，以匹配训练配置。
-
-```bash
-modelscope download --model <gemma-3-270m repo> --local_dir ./gemma3-270m
-```
-
-**步骤 5：重新生成简化后的训练集和验证集。**
-
-```bash
-python util/simplify_svg_data.py
-```
-
-该命令会创建或刷新 `logo-detailed-prompt-simple/train.jsonl`、`valid.jsonl` 和 `simplify_report.json`。
-
-**步骤 6：按照 `train_config.yaml` 训练 LoRA。**
-
-```bash
-bash train_swift.sh
-```
-
-**步骤 7：根据验证 loss 选择适配器。**
-
-```bash
-bash select_best_adapter.sh
-```
-
-脚本从最新训练目录的现存 checkpoint 中选择 `eval_loss` 最低者，并将权重复制到 `adapter/`。
-
-**步骤 8：在完整验证集上评测基座与 LoRA。**
+复现命令：
 
 ```bash
 python student_kit/eval_self.py \
   --model ./gemma3-270m \
   --adapter adapter \
-  --valid logo-detailed-prompt-simple/valid.jsonl \
+  --valid logo-detailed-prompt/valid.jsonl \
   --output results.json \
   --max-new-tokens 1600 \
-  --temperature 0
+  --temperature 1.0 \
+  --top-p 1.0 \
+  --seed 42
+
+python student_kit/make_gallery.py \
+  --results results.json \
+  --output gallery.html
 ```
 
-**步骤 9：生成可视化对比页。**
+## 7. 结果
 
-```bash
-python student_kit/make_gallery.py --results results.json --output gallery.html
-```
+### 7.1 定量结果
 
-打开 `gallery.html` 即可并排查看 Target、Base、Adapter 及对应 reward。正式完整评测前，也可以先运行以下烟测命令检查模型和 adapter 是否能正常加载：
-
-```bash
-python student_kit/eval_self.py \
-  --model ./gemma3-270m \
-  --adapter adapter \
-  --valid logo-detailed-prompt-simple/valid.jsonl \
-  --output results_smoke.json \
-  --limit 3 \
-  --max-new-tokens 1600 \
-  --temperature 0
-```
-
-自评使用 temperature 0、top_p 1.0 与固定验证集，因此解码是确定性的；硬件、PyTorch/ms-swift 小版本差异仍可能导致轻微变化。更详细的命令见 `RUN_COMMANDS.md`。
-
-## 6. 最终结果
-
-### 6.1 定量结果
-
-| 指标 | Base | LoRA | 变化 |
+| 指标 | Base | LoRA | 差值 |
 |---|---:|---:|---:|
-| 平均 reward | 0.0080 | 0.2336 | **+0.2256** |
+| 平均 reward | 0.0030 | 0.4588 | **+0.4558** |
 | 直接以 `<svg>` 开始 | 0/17 | 17/17 | +17 |
-| XML 解析成功 | 0/17 | 1/17 | +1 |
-| 找到闭合 SVG 片段 | 17/17* | 2/17 | -15 |
-| 触达生成 token 上限 | 15/17 | 16/17 | +1 |
-| 平均输出 token | 1460.1 | 1576.9 | +116.8 |
+| XML 严格解析成功 | 0/17 | 8/17 | +8 |
+| 浏览器可解析/展示 | 0/17 | 16/17 | +16 |
+| 找到第一个闭合 SVG 片段 | 5/17* | 16/17 | +11 |
+| 触达生成 token 上限 | 5/17 | 9/17 | +4 |
+| 平均输出 token | 732.9 | 1335.5 | +602.6 |
 
-\* 基座的“闭合片段”是它复述 system prompt 中的字面示例 `<svg>...</svg>`，并非完成了任务，所以 reward 的 task_intent 正确地把这些样本判为 0。该指标必须与“是否从 SVG 开始”联合阅读。
+\* Base 中找到的闭合片段来自模型复述原始 system prompt 中的字面 `<svg ...>...</svg>` 示例，并非真正完成任务；所有 Base 回答都没有直接以 SVG 开始，因此 reward 正确地在 task_intent 门控处停止。
 
-LoRA 的逐样本 reward 分布为：1 条 0.8905、15 条 0.19、1 条 0.23。均值被唯一高分样本明显拉高；中位数只有 **0.19**。若只看均值，会高估改进的稳定性。
+“浏览器可解析/展示”通过最终 [画廊](gallery.html) 补充检查：LoRA 的 17 个结果中有 16 个存在浏览器能够处理和展示的首个 SVG 片段，画廊编号 `#2` 是唯一没有闭合片段、显示 `No SVG` 的样本。该指标不同于 XML 严格解析率，也不是 reward 组件；浏览器可能容忍重复属性、标签错配等 XML 不接受的问题。
 
-### 6.2 定性案例
+LoRA reward 呈明显双峰分布：8 条严格 XML 合法输出的分数位于 **0.8345–0.9650**，另外 9 条因 XML 失败停留在 **0.0650–0.0800**。平均值为 0.4588，中位数为 0.0800。均值反映了一部分高质量成功样本，但中位数说明严格可解析输出尚未成为多数。
 
-**案例 A：儿童绘画徽标（index 0）**
+### 7.2 定性观察
 
-- Base：复述完整 system prompt 与用户描述，随后只出现字面 `<svg>...</svg>` 占位，reward 0.008。
-- LoRA：正确以标准根节点开头，使用 cream 背景、rect/circle/path 等合法图元，第一个 SVG 片段可解析，reward 0.8905。
-- 问题：大量重复相同圆形，闭合后又继续生成重复 path，视觉内容与“画笔、彩带、闪光”只弱相关。高分主要来自合法前缀、标准画布和安全结构，不代表高视觉质量。
+**完整且高分的输出。** 画廊 `#7` 的 LoRA 输出只生成 478 token，没有触达上限，完整回答通过 XML 解析并得到 0.9075。它说明模型可以在适当采样下生成短而完整的 SVG，而不只是学会 `<svg>` 开头。
 
-**案例 B：救援之家徽标（index 1）**
+**首个 SVG 有效但继续生成。** `#0` 的首个 SVG 可严格解析并得到 0.8980，但完整回答达到约 1600 token，且首个 `</svg>` 后仍有额外文本。Reward 的 XML/质量项检查首个闭合 SVG，format 和 anti-degenerate 则检查完整回答，因此该样本既保留了有效图形的质量分，也记录了停止行为问题。
 
-- Base：重复提示词而不真正作答，reward 0.008。
-- LoRA：能抽取提示中的 `#E8ECEF`、`#1F4E79`、`#F2994A`，并从 circle/path 开始构图，说明有局部颜色条件能力；但迅速退化为 `L128 128` 循环，耗尽 1600 token，XML 未闭合，reward 0.19。
+**浏览器容错与 XML 严格性的差别。** 多条低分输出具有闭合 SVG 片段，并能由浏览器容错展示，但因重复属性、非法字符或标签错配无法通过 `ElementTree`。这类结果具备一定展示价值，却不保证能作为独立 SVG 被编辑器、XML 工具链或其他渲染器一致处理。
 
-**案例 C：验证集 index 16**
+**没有闭合片段的失败。** `#2` 从 `<svg>` 开始并生成了部分图元，但输出在达到 token 上限时仍未闭合。由于没有第一个完整 SVG 片段，画廊显示 `No SVG`，严格 XML 也失败，reward 为 0.0650。
 
-- LoRA 未触达 token 上限且带 `</svg>`，但属性引号损坏（`fill="none stroke=...`），仍不能解析，reward 0.23。
-- 这表明“生成了结束标签”不是充分条件；XML 级约束必须覆盖整个解码过程。
+建议直接打开 [SVG 对比画廊](gallery.html) 查看全部 17 个 Target、Base 和 Adapter 输出；文本级细节可在 [results.json](results.json) 中核验。
 
-完整输出很长，不适合在报告中全文复制，可直接打开 `gallery.html` 或查看 `results.json` 逐项核验。
+## 8. 分析
 
-## 7. 为什么会得到这样的结果
+1. **LoRA 稳定建立了任务意图。** 17 条 LoRA 回答全部直接以 `<svg>` 开始，而 Base 为 0/17。这说明简化训练中的统一回答格式形成了很强的首 token 行为。
+2. **严格语法仍是主要分界。** 8 条 XML 成功样本全部进入高分区，9 条 XML 失败样本因门控停留在低分区。重复属性、非法字符、标签错配和未闭合仍是主要错误。
+3. **浏览器展示不能替代 XML 合法性。** 16/17 的浏览器展示率说明多数输出具有直观使用价值，但严格 XML 只有 8/17。两项指标共同报告，能够分别反映网页展示能力和跨工具可移植性。
+4. **采样改善了生成多样性，但停止行为仍不稳定。** `temperature=1.0` 允许模型跳出部分高概率循环，并产生 8 条完整高分结果；与此同时，9/17 仍触达 token 上限，多条回答在首个闭合 SVG 后继续生成。由于本次结果不构成温度消融，不能把全部改进严格归因于温度。
+5. **简化训练具有迁移价值。** 模型训练于纯色、浅层、最多 40 图元的目标，但最终在原始 system prompt 和原始 Target 验证集上仍取得 16/17 浏览器展示率。这说明模型学到的基础 SVG 结构能够迁移到较宽松的原始任务描述；它并不意味着模型已经掌握原始数据中的全部渐变、滤镜和复杂结构。
+6. **验证 loss 与自由生成互补。** step 200 的最低 eval loss 衡量简化验证集上的 teacher-forcing 预测，而最终 reward、XML 率和画廊衡量原始验证集上的自由生成。两者用途不同，因此 checkpoint 选择和最终效果需要分别报告。
 
-1. **SFT 学到了强而局部的格式模式。** 205 个训练答案都从标准 `<svg>` 根节点开始，因此 LoRA 很容易把首 token 行为从“复述提示词”改为“立即输出 SVG”。这解释了 task_intent 从 0% 到 100%，也是 reward 上升的主要来源。
-2. **学会开头比学会长程闭合容易。** 一份 SVG 通常需要上千 token，闭合依赖模型持续维护引号、标签和 path 状态。270M 参数量与 2048 训练长度下，局部 token 模式可以拟合，长程结构一致性仍困难。
-3. **确定性解码会固化循环。** temperature 0 便于公平复现，但模型一旦进入高概率的 `circle`、`L128 128` 或 path 片段，就没有随机性帮助其跳出循环。于是 16/17 LoRA 输出耗尽上限。
-4. **复杂详细提示与小模型容量不匹配。** 每条提示同时要求对象、颜色、层次、风格和象征意义。模型偶尔能复制 hex 色值和基础形状，却难以把全部条件组织为一致构图。
-5. **数据简化降低了语法难度，但未直接教停止。** 目标长度变短且标签更少，使 reward 从历史 0.190 提升到 0.2336；然而训练目标仍包含较长 path，且没有专门的闭合/重复负样本或结构约束，因此循环问题依旧。
-6. **验证 loss 与生成质量不完全一致。** loss 衡量 teacher-forcing 下下一个 token 的平均概率；推理时一个错误会改变后续上下文并累积。step 200 的 loss 较好，只说明对参考序列的局部预测改善，并不保证自由生成时能闭合。
+## 9. 局限与改进方向
 
+- Reward 的提示词对齐依赖形状标签、颜色和少量字面词，不能替代真实视觉语义或审美评价。
+- 浏览器展示率来自画廊检查，不是自动截图或像素级验证；浏览器容错结果也可能存在跨浏览器差异。
+- 单一 seed、单次温度采样不能完整估计随机解码方差。更严格的实验可对每条 prompt 使用多个 seed，报告均值和成功率区间。
+- 可在生成首个合法 `</svg>` 后立即停止，减少尾随文本和 token 浪费。
+- 可加入针对重复属性、标签闭合和停止行为的短样本，或使用结构约束解码，提高严格 XML 成功率。
+- 数据简化应继续用于小模型的基础语法学习；若后续模型容量和数据量增加，可逐步恢复渐变、`<defs>` 和更复杂的构图目标。
 
-## 8. 局限与未来改进
+## 10. 结论
 
+LoRA 将 Gemma 3 270M 从不执行 SVG 任务的基座行为，提升为 17/17 直接生成 SVG、8/17 严格 XML 合法、16/17 可在浏览器画廊中解析展示。平均 reward 为 0.4588，反映出模型已经能稳定产生一部分完整、高质量的程序化 SVG；中位数 0.0800 和 9/17 的 XML 失败率则表明语法完整性与停止行为仍是主要限制。
 
-### 8.1 数据与训练改进
-
-- 进一步限制目标长度与 path 复杂度，把复杂 path 拆成少量可学习的基础图元；显式加入短小、正确闭合的模板样本。
-- 加入课程学习：先训练极短的 3–8 图元图标，再逐步增加元素数量和提示复杂度。
-
-### 8.2 解码改进
-
-- 在首次生成合法 `</svg>` 后立即停止，并禁止继续产生尾随文本。
-- 尝试更小的 `max_new_tokens` 与结构感知截断/修复，但修复结果应单独评估，不能与模型原始能力混淆。
-
-## 9. 结论
-
-本项目证明 LoRA 能让 Gemma 3 270M 从“几乎只复述任务”转为“稳定以标准 SVG 根节点开始”，代理 reward 获得 +0.2256 的明显相对提升；但长序列闭合、抗重复与语义构图仍是主要瓶颈。当前结果最有价值的洞察是：对极小模型，格式学习可以很快成功，而 teacher-forcing loss、代理 reward 和真实可渲染/视觉质量之间存在明显鸿沟。未来改进重点是尝试提高svg正确闭合率。
+本实验同时使用简化验证集完成训练期 checkpoint 选择，并使用原始验证集完成最终推理自评。结果表明，简化数据有助于小模型学习基础 SVG 结构，而且这种能力能够迁移到原始 system prompt 下；严格 XML、浏览器展示和画廊视觉检查必须联合使用，才能完整描述模型的实际效果。

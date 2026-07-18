@@ -68,10 +68,11 @@ bash select_best_adapter.sh
 python student_kit/eval_self.py \
   --model ./gemma3-270m \
   --adapter adapter \
-  --valid logo-detailed-prompt-simple/valid.jsonl \
+  --valid logo-detailed-prompt/valid.jsonl \
   --output results.json \
   --max-new-tokens 1600 \
-  --temperature 0
+  --temperature 1.0 \
+  --seed 42
 ```
 
 生成一个可以用浏览器打开的可视化对比页：
@@ -92,6 +93,6 @@ python student_kit/eval_self.py \
   --output results_smoke.json \
   --limit 3 \
   --max-new-tokens 1600 \
-  --temperature 0
+  --temperature 1.0 \
+  --seed 42
 ```
-

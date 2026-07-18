@@ -1,8 +1,8 @@
 """Programmatic reward for detailed-prompt -> SVG logo generation.
 
-The reward is intentionally conservative: it rewards valid, bounded, simple SVG
-logos before trying to judge semantic fidelity. This matches the assignment goal
-for Gemma 3 270M: stable valid SVG is already meaningful progress.
+The reward gates higher-level scoring on basic SVG validity, then assigns most
+weight to structure, bounded geometry, palette, prompt alignment, and resistance
+to repetitive degeneration.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import math
 import re
 import statistics
 import xml.etree.ElementTree as ET
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
@@ -155,23 +156,27 @@ def _score(raw_svg: str, prompt: str) -> RewardResult:
     components["geometry"] = _score_geometry(elements, notes)
     components["palette"] = _score_palette(elements, notes)
     components["prompt_alignment"] = _score_prompt_alignment(prompt, elements, svg, notes)
-    components["anti_degenerate"] = _score_anti_degenerate(svg, elements, notes)
+    # Inspect the complete response, not only the first closed SVG. This catches
+    # a valid prefix followed by degenerate trailing output.
+    components["anti_degenerate"] = _score_anti_degenerate(raw_svg, elements, notes)
 
     return _finalize(components, notes)
 
 
 def _finalize(components: dict[str, float], notes: list[str]) -> RewardResult:
     weights = {
-        "task_intent": 0.15,
-        "format": 0.08,
-        "parse": 0.14,
-        "svg_contract": 0.10,
-        "safety": 0.10,
-        "structure": 0.12,
-        "geometry": 0.11,
-        "palette": 0.08,
-        "prompt_alignment": 0.09,
-        "anti_degenerate": 0.03,
+        # Basic task compliance is necessary but deliberately capped at 0.33.
+        # Most reward now distinguishes higher-level output quality.
+        "task_intent": 0.05,
+        "format": 0.03,
+        "parse": 0.10,
+        "svg_contract": 0.07,
+        "safety": 0.08,
+        "structure": 0.15,
+        "geometry": 0.14,
+        "palette": 0.11,
+        "prompt_alignment": 0.20,
+        "anti_degenerate": 0.07,
     }
     # Missing components are failures, not reasons to renormalize the score.
     # This keeps malformed/non-SVG output below valid SVG output and prevents
@@ -392,6 +397,15 @@ def _score_anti_degenerate(svg: str, elements: list[ET.Element], notes: list[str
     lower = svg.lower()
     repeated_paths = len(re.findall(r"(m\s*[\d\-. ,]+){8,}", lower))
     repeated_chars = bool(re.search(r"([a-z0-9#<>/=\-])\1{30,}", lower))
+    graphic_openings = re.findall(
+        r"<(?:path|circle|ellipse|rect|polygon|line)\b[^>]*>", lower
+    )
+    repeated_elements = max(Counter(graphic_openings).values(), default=0)
+    point_commands = re.findall(
+        r"\b[ml]\s*[-+]?\d+(?:\.\d+)?(?:[ ,]+)[-+]?\d+(?:\.\d+)?",
+        lower,
+    )
+    repeated_points = max(Counter(point_commands).values(), default=0)
     unique_tags = len({_tag(el.tag) for el in elements})
     score = 1.0
     if repeated_paths:
@@ -400,6 +414,12 @@ def _score_anti_degenerate(svg: str, elements: list[ET.Element], notes: list[str
     if repeated_chars:
         score -= 0.35
         notes.append("repetitive_character_run")
+    if repeated_elements >= 8:
+        score -= 0.45
+        notes.append(f"repeated_identical_elements: {repeated_elements}")
+    if repeated_points >= 12:
+        score -= 0.45
+        notes.append(f"repeated_path_points: {repeated_points}")
     if unique_tags <= 2:
         score -= 0.20
         notes.append("low_tag_diversity")

@@ -12,7 +12,7 @@ from typing import Any
 
 from tqdm import tqdm
 from swift import InferRequest, RequestConfig, TransformersEngine
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, set_seed
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -39,6 +39,7 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=1600)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
 
@@ -52,12 +53,14 @@ def main() -> None:
         "max_new_tokens": args.max_new_tokens,
         "temperature": args.temperature,
         "top_p": args.top_p,
+        "seed": args.seed,
         "runs": {},
     }
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
 
     base_engine = TransformersEngine(args.model)
+    set_seed(args.seed)
     results["runs"]["base"] = evaluate_engine(
         base_engine,
         tokenizer,
@@ -69,6 +72,8 @@ def main() -> None:
 
     if args.adapter:
         adapter_engine = TransformersEngine(args.model, adapters=[args.adapter])
+        # Give base and adapter the same sampling stream for a fair comparison.
+        set_seed(args.seed)
         results["runs"]["adapter"] = evaluate_engine(
             adapter_engine,
             tokenizer,
