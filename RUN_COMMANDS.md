@@ -29,7 +29,7 @@ PY
 ## 2. 下载基座模型
 
 ```bash
-modelscope download --model <gemma-3-270m repo> --local_dir ./gemma3-270m
+modelscope download --model google/gemma-3-270m --local_dir ./gemma3-270m
 ```
 
 ## 3. 快速检查 reward
